@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/drollllted/url-shortener/internal/store"
 )
 
 // Const
@@ -36,7 +39,8 @@ func (e errorDTO) ToString() string {
 	return string(b)
 }
 
-var store = map[string]string{}
+// var store = map[string]string{}
+var stores = store.NewStore()
 
 func main() {
 	http.HandleFunc("POST /shorten", shorten)
@@ -59,16 +63,35 @@ func shorten(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code := generateCode()
-	store[code] = request.URL
-
-	writeJSON(w, http.StatusCreated, map[string]string{
-		"short_url": baseURL + "/" + code,
-	})
+	for i := 0; i <= 5; i++ {
+		code := generateCode()
+		err := stores.Save(code, request.URL)
+		if err != nil {
+			if errors.Is(err, store.ErrCodeTaken) {
+				writeError(w, http.StatusConflict, "Already taken")
+			} else {
+				writeError(w, http.StatusInternalServerError, "Internal error")
+			}
+			return
+		} else {
+			writeJSON(w, http.StatusCreated, map[string]string{
+				"short_url": baseURL + "/" + code,
+			})
+			return
+		}
+	}
 
 }
 
 func getCode(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	target, ok := stores.Get(code)
+	if !ok {
+		writeError(w, http.StatusNotFound, "Не найдено")
+		return
+	}
+
+	http.Redirect(w, r, target, http.StatusFound)
 
 }
 
