@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/drollllted/url-shortener/internal/service"
 )
 
 func TestIsValidURL(t *testing.T) {
@@ -20,13 +22,13 @@ func TestIsValidURL(t *testing.T) {
 		{"http с пустой строкой", "", false},
 		{"http с простой строкой", "abd", false},
 		{"http с странной ссылкой", "ftp://x.com", false},
-		{"не подзодит с ссылка", "javascript:alert(1)", false},
+		{"Схема не подходит javascript", "javascript:alert(1)", false},
 		{"Пустой host", "https://", false},
 		// TODO: добавьте "", "abc", "ftp://x.com", "javascript:alert(1)", "http://"
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := isValidURL(c.in); got != c.want {
+			if got := service.IsValidURL(c.in); got != c.want {
 				t.Errorf("isValidURL(%q) = %v, want %v", c.in, got, c.want)
 			}
 		})
