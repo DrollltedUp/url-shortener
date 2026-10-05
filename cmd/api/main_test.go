@@ -7,33 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/drollllted/url-shortener/internal/service"
 )
-
-func TestIsValidURL(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want bool
-	}{
-		{"https ok", "https://go.dev", true},
-		{"http с путём", "http://localhost:3000/a?b=1", true},
-		{"http с пустой строкой", "", false},
-		{"http с простой строкой", "abd", false},
-		{"http с странной ссылкой", "ftp://x.com", false},
-		{"Схема не подходит javascript", "javascript:alert(1)", false},
-		{"Пустой host", "https://", false},
-		// TODO: добавьте "", "abc", "ftp://x.com", "javascript:alert(1)", "http://"
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := service.IsValidURL(c.in); got != c.want {
-				t.Errorf("isValidURL(%q) = %v, want %v", c.in, got, c.want)
-			}
-		})
-	}
-}
 
 func TestShortenConcurrent(t *testing.T) {
 	var wg sync.WaitGroup

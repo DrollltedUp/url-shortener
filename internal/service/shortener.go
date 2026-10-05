@@ -12,8 +12,10 @@ type Shortener struct {
 	store *store.Store
 }
 
-var ErrInvalidURL = errors.New("Invalid URL")
-var ErrCodeTaken = errors.New("code already taken")
+var (
+	ErrInvalidURL     = errors.New("Invalid URL")
+	ErrCodeGeneration = errors.New("Could not generate unique code")
+)
 
 const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
@@ -24,28 +26,26 @@ func NewShortener(s *store.Store) *Shortener {
 }
 
 func (s *Shortener) Shorten(rawURL string) (string, error) {
-	//var store store.Store
-	if !IsValidURL(rawURL) {
+	if !isValidURL(rawURL) {
 		return "", ErrInvalidURL
 	}
 
 	for i := 0; i < 5; i++ {
 		code := generateCode()
-		if err := s.store.Save(code, rawURL); err != nil {
-			if errors.Is(err, ErrCodeTaken) {
-				return "", err
-			} else {
-				return "", err
-			}
+		err := s.store.Save(code, rawURL)
+		if err == nil {
+			return code, nil
 		}
 
-		return code, nil
+		if !errors.Is(err, store.ErrCodeTaken) {
+			return "", err
+		}
 	}
 
-	return "", nil
+	return "", ErrCodeGeneration
 }
 
-func IsValidURL(raw string) bool {
+func isValidURL(raw string) bool {
 	u, err := url.ParseRequestURI(raw)
 	if err != nil {
 		return false

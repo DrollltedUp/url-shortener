@@ -30,6 +30,7 @@ type errorDTO struct {
 
 // var store = map[string]string{}
 var stores = store.NewStore()
+var shorteners = service.NewShortener(stores)
 
 func main() {
 	http.HandleFunc("POST /shorten", shorten)
@@ -42,13 +43,12 @@ func main() {
 
 func shorten(w http.ResponseWriter, r *http.Request) {
 	var request Request
-	var shortener service.Shortener
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 
-	code, err := shortener.Shorten(request.URL)
+	code, err := shorteners.Shorten(request.URL)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidURL):
