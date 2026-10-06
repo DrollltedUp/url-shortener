@@ -76,7 +76,7 @@ func TestShorten_RetriesOnCollision(t *testing.T) {
 
 	savedURL, ok := st.Get(occupiedCode)
 	if !ok {
-		t.Errorf("expected to find occupied code, got error: %v", err)
+		t.Errorf("expected to find occupied code, got error: %v", occupiedCode)
 	}
 	if savedURL != occupiedURL {
 		t.Errorf("expected occupied URL to remain '%s', got '%s'", occupiedURL, savedURL)

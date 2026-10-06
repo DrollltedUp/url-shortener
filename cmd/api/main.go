@@ -60,15 +60,17 @@ func shorten(w http.ResponseWriter, r *http.Request) {
 }
 
 func getCode(w http.ResponseWriter, r *http.Request) {
-	code := r.PathValue("code")
-	target, ok := stores.Get(code)
-	if !ok {
-		writeError(w, http.StatusNotFound, "Не найдено")
+	target, err := shorteners.Resolve(r.PathValue("code"))
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrNotFound):
+			writeError(w, http.StatusNotFound, "not found")
+		default:
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
 		return
 	}
-
 	http.Redirect(w, r, target, http.StatusFound)
-
 }
 
 // Functions Other

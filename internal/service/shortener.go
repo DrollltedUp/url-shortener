@@ -20,8 +20,9 @@ type Shortener struct {
 }
 
 var (
-	ErrInvalidURL     = errors.New("Invalid URL")
-	ErrCodeGeneration = errors.New("Could not generate unique code")
+	ErrInvalidURL     = errors.New("invalid URL")
+	ErrCodeGeneration = errors.New("could not generate unique code")
+	ErrNotFound       = errors.New("link not found")
 )
 
 const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -73,4 +74,15 @@ func (RandomGeneration) Generate() string {
 	}
 
 	return string(b)
+}
+
+// Resolve(get code for search)
+
+func (s *Shortener) Resolve(code string) (string, error) {
+	target, ok := s.store.Get(code)
+	if !ok {
+		return "", ErrNotFound
+	}
+
+	return target, nil
 }
