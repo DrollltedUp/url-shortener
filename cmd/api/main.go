@@ -28,9 +28,8 @@ type errorDTO struct {
 	Time    time.Time `json:"time"`
 }
 
-// var store = map[string]string{}
 var stores = store.NewStore()
-var shorteners = service.NewShortener(stores)
+var shorteners = service.NewShortener(stores, service.RandomGeneration{})
 
 func main() {
 	http.HandleFunc("POST /shorten", shorten)
@@ -38,8 +37,6 @@ func main() {
 
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
-
-// Functions for Call
 
 func shorten(w http.ResponseWriter, r *http.Request) {
 	var request Request
@@ -59,29 +56,6 @@ func shorten(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"short_url": baseURL + "/" + code})
-
-	// if !isValidURL(request.URL) {
-	// 	writeError(w, http.StatusBadRequest, "bad URL")
-	// 	return
-	// }
-
-	// for i := 0; i <= 5; i++ {
-	// 	code := generateCode()
-	// 	err := stores.Save(code, request.URL)
-	// 	if err != nil {
-	// 		if errors.Is(err, store.ErrCodeTaken) {
-	// 			writeError(w, http.StatusConflict, "Already taken")
-	// 		} else {
-	// 			writeError(w, http.StatusInternalServerError, "Internal error")
-	// 		}
-	// 		return
-	// 	} else {
-	// 		writeJSON(w, http.StatusCreated, map[string]string{
-	// 			"short_url": baseURL + "/" + code,
-	// 		})
-	// 		return
-	// 	}
-	// }
 
 }
 

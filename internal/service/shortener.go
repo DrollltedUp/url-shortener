@@ -8,8 +8,15 @@ import (
 	"github.com/drollllted/url-shortener/internal/store"
 )
 
+type CodeGenerator interface {
+	Generate() string
+}
+
+type RandomGeneration struct{}
+
 type Shortener struct {
 	store *store.Store
+	gen   CodeGenerator
 }
 
 var (
@@ -19,9 +26,10 @@ var (
 
 const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-func NewShortener(s *store.Store) *Shortener {
+func NewShortener(s *store.Store, gen CodeGenerator) *Shortener {
 	return &Shortener{
 		store: s,
+		gen:   gen,
 	}
 }
 
@@ -31,7 +39,7 @@ func (s *Shortener) Shorten(rawURL string) (string, error) {
 	}
 
 	for i := 0; i < 5; i++ {
-		code := generateCode()
+		code := s.gen.Generate()
 		err := s.store.Save(code, rawURL)
 		if err == nil {
 			return code, nil
@@ -58,7 +66,7 @@ func isValidURL(raw string) bool {
 	return true
 }
 
-func generateCode() string {
+func (RandomGeneration) Generate() string {
 	b := make([]byte, 6)
 	for i := range b {
 		b[i] = alphabet[rand.IntN(len(alphabet))]
