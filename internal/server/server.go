@@ -36,7 +36,7 @@ func NewServer(svc *service.Shortener, baseURL string) *Server {
 var stores = store.NewStore()
 var shorteners = service.NewShortener(stores, service.RandomGeneration{})
 
-func (s *Server) routes() http.Handler {
+func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /shorten", shorten)
 	mux.HandleFunc("GET /{code}", getCode)
