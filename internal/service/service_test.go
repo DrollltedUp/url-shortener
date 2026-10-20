@@ -82,3 +82,13 @@ func TestShorten_RetriesOnCollision(t *testing.T) {
 		t.Errorf("expected occupied URL to remain '%s', got '%s'", occupiedURL, savedURL)
 	}
 }
+
+func TestShorten_AllCodesTaken(t *testing.T) {
+	st := store.NewStore()
+	svc := NewShortener(st, &fakeGen{codes: []string{"aaaaaa"}})
+	_, err := svc.Shorten("https://go.dev")
+
+	if errors.Is(err, ErrCodeGeneration) {
+		
+	}
+}
