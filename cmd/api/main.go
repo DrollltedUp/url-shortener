@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/drollllted/url-shortener/internal/db"
 	"github.com/drollllted/url-shortener/internal/server"
 	"github.com/drollllted/url-shortener/internal/service"
-	"github.com/drollllted/url-shortener/internal/store"
 )
 
 type Config struct {
@@ -46,7 +46,19 @@ func run() error {
 	cfg := loadConfig()
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	st := store.NewStore()
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Error("DATABASE_URL not set")
+		os.Exit(1)
+	}
+
+	pool, err := db.NewPool(context.Background(), dbURL)
+	if err != nil {
+		log.Error("Cannot connect to database", "err", err)
+		os.Exit(1)
+	}
+
+	st := db.NewURLMemory(pool)
 	svc := service.NewShortener(st, service.RandomGeneration{})
 	srv := server.NewServer(svc, cfg.BaseURL)
 

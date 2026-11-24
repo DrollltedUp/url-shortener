@@ -1,6 +1,0 @@
-CREATE TABLE url(
-    id BIGINT GENERATED ALWAYS AS IDENITY PRIMARY KEY,
-    url_original TEXT NOT NULL,
-    url_short TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);

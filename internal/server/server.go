@@ -36,6 +36,7 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /shorten", s.shorten)
 	mux.HandleFunc("GET /{code}", s.getCode)
+	mux.HandleFunc("GET /health", s.healthHandle)
 
 	return mux
 }
@@ -47,7 +48,7 @@ func (s *Server) shorten(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code, err := s.svc.Shorten(request.URL)
+	code, err := s.svc.Shorten(r.Context(), request.URL)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidURL):
@@ -62,7 +63,7 @@ func (s *Server) shorten(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getCode(w http.ResponseWriter, r *http.Request) {
-	target, err := s.svc.Resolve(r.PathValue("code"))
+	target, err := s.svc.Resolve(r.Context(), r.PathValue("code"))
 	//shorteners.Resolve(r.PathValue("code"))
 	if err != nil {
 		switch {
@@ -74,6 +75,10 @@ func (s *Server) getCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, target, http.StatusFound)
+}
+
+func (s *Server) healthHandle(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // Functions Other
