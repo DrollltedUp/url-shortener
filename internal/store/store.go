@@ -1,24 +1,22 @@
 package store
 
 import (
-	"errors"
+	"context"
 	"sync"
 )
 
-type Store struct {
+type DataStore struct {
 	mtx  sync.RWMutex
 	data map[string]string
 }
 
-var ErrCodeTaken = errors.New("code already taken")
-
-func NewStore() *Store {
-	return &Store{
+func NewStore() *DataStore {
+	return &DataStore{
 		data: make(map[string]string),
 	}
 }
 
-func (s *Store) Save(code, target string) error {
+func (s *DataStore) Save(_ context.Context, code, target string) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -31,7 +29,7 @@ func (s *Store) Save(code, target string) error {
 	return nil
 }
 
-func (s *Store) Get(code string) (string, bool) {
+func (s *DataStore) Get(_ context.Context, code string) (string, bool) {
 
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()

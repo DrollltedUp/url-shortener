@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"math/rand/v2"
 	"net/url"
@@ -15,7 +16,7 @@ type CodeGenerator interface {
 type RandomGeneration struct{}
 
 type Shortener struct {
-	store *store.Store
+	store store.Store
 	gen   CodeGenerator
 }
 
@@ -27,21 +28,21 @@ var (
 
 const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-func NewShortener(s *store.Store, gen CodeGenerator) *Shortener {
+func NewShortener(s store.Store, gen CodeGenerator) *Shortener {
 	return &Shortener{
 		store: s,
 		gen:   gen,
 	}
 }
 
-func (s *Shortener) Shorten(rawURL string) (string, error) {
+func (s *Shortener) Shorten(ctx context.Context, rawURL string) (string, error) {
 	if !isValidURL(rawURL) {
 		return "", ErrInvalidURL
 	}
 
 	for i := 0; i < 5; i++ {
 		code := s.gen.Generate()
-		err := s.store.Save(code, rawURL)
+		err := s.store.Save(ctx, code, rawURL)
 		if err == nil {
 			return code, nil
 		}
@@ -78,9 +79,9 @@ func (RandomGeneration) Generate() string {
 
 // Resolve(get code for search)
 
-func (s *Shortener) Resolve(code string) (string, error) {
-	target, ok := s.store.Get(code)
-	if !ok {
+func (s *Shortener) Resolve(ctx context.Context, code string) (string, error) {
+	target, err := s.store.Get(ctx, code)
+	if err != nil {
 		return "", ErrNotFound
 	}
 
