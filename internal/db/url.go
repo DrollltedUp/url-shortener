@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/drollllted/url-shortener/internal/store"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -48,9 +47,6 @@ func (u *URLMemory) Get(ctx context.Context, code string) (string, error) {
 	const q = `SELECT url_original FROM url WHERE url_short = $1`
 	var target string
 	err := u.pool.QueryRow(ctx, q, code).Scan(&target)
-	if errors.As(err, pgx.ErrNoRows) {
-		return "", store.ErrNotFound
-	}
 	if err != nil {
 		return "", fmt.Errorf("select url: %w", err)
 	}
