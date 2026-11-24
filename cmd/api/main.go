@@ -65,7 +65,7 @@ func run() error {
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("server started", "addr", cfg.addr, "base_url", cfg.BaseURL)
-		if err := httpServer.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()

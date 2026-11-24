@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/drollllted/url-shortener/internal/service"
-	"github.com/drollllted/url-shortener/internal/store"
 )
 
 const baseURL = "http://localhost:9091"
@@ -33,25 +32,22 @@ func NewServer(svc *service.Shortener, baseURL string) *Server {
 	}
 }
 
-var stores = store.NewStore()
-var shorteners = service.NewShortener(stores, service.RandomGeneration{})
-
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /shorten", shorten)
-	mux.HandleFunc("GET /{code}", getCode)
+	mux.HandleFunc("POST /shorten", s.shorten)
+	mux.HandleFunc("GET /{code}", s.getCode)
 
 	return mux
 }
 
-func shorten(w http.ResponseWriter, r *http.Request) {
+func (s *Server) shorten(w http.ResponseWriter, r *http.Request) {
 	var request Request
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 
-	code, err := shorteners.Shorten(request.URL)
+	code, err := s.svc.Shorten(request.URL)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidURL):
@@ -65,8 +61,9 @@ func shorten(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func getCode(w http.ResponseWriter, r *http.Request) {
-	target, err := shorteners.Resolve(r.PathValue("code"))
+func (s *Server) getCode(w http.ResponseWriter, r *http.Request) {
+	target, err := s.svc.Resolve(r.PathValue("code"))
+	//shorteners.Resolve(r.PathValue("code"))
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrNotFound):
