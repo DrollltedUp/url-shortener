@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -11,27 +12,34 @@ import (
 )
 
 const maxBodyBytes = 4 << 10
+const readyzTimeout = 2 * time.Second
 
 type errorDTO struct {
 	Message string    `json:"message"`
 	Time    time.Time `json:"time"`
 }
 
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 type Server struct {
 	svc     *service.Shortener
 	log     *slog.Logger
 	baseURL string
+	pinger  Pinger
 }
 
 type Request struct {
 	URL string `json:"url"`
 }
 
-func NewServer(svc *service.Shortener, log *slog.Logger, baseURL string) *Server {
+func NewServer(svc *service.Shortener, log *slog.Logger, baseURL string, pinger Pinger) *Server {
 	return &Server{
 		svc:     svc,
 		log:     log,
 		baseURL: baseURL,
+		pinger:  pinger,
 	}
 }
 
@@ -40,6 +48,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /shorten", s.shorten)
 	mux.HandleFunc("GET /{code}", s.getCode)
 	mux.HandleFunc("GET /health", s.healthHandle)
+	mux.HandleFunc("GET /readyz", s.readyzHandle)
 
 	return s.logRequest(s.recovery(mux))
 }
@@ -79,6 +88,23 @@ func (s *Server) getCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) healthHandle(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) readyzHandle(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), readyzTimeout)
+	defer cancel()
+
+	if s.pinger == nil {
+		writeError(w, http.StatusServiceUnavailable, "readiness not configured")
+		return
+	}
+
+	if err := s.pinger.Ping(ctx); err != nil {
+		s.log.WarnContext(r.Context(), "readiness check failed", "request_id", requestID(r.Context()), "err", err)
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

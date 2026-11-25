@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,15 +17,45 @@ import (
 )
 
 type Config struct {
-	addr    string
-	BaseURL string
+	addr     string
+	BaseURL  string
+	LogLevel slog.Level
+	LogJSON  bool
 }
 
 func loadConfig() Config {
 	return Config{
-		addr:    getEnv("ADDR", ":9091"),
-		BaseURL: getEnv("BASEURL", "http://localhost:9091"),
+		addr:     getEnv("ADDR", ":9091"),
+		BaseURL:  getEnv("BASEURL", "http://localhost:9091"),
+		LogLevel: parseLevel(getEnv("LOG_LEVEL", "info")),
+		LogJSON:  strings.EqualFold(getEnv("LOG_FORMAT", "text"), "json"),
 	}
+}
+
+func parseLevel(s string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+func newLogger(level slog.Level, json bool) *slog.Logger {
+	opts := &slog.HandlerOptions{Level: level}
+	var h slog.Handler
+	if json {
+		h = slog.NewJSONHandler(os.Stdout, opts)
+	} else {
+		h = slog.NewTextHandler(os.Stdout, opts)
+	}
+	return slog.New(h)
 }
 
 func getEnv(key, fallback string) string {
@@ -44,24 +75,24 @@ func main() {
 
 func run() error {
 	cfg := loadConfig()
-	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	log := newLogger(cfg.LogLevel, cfg.LogJSON)
+	slog.SetDefault(log)
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Error("DATABASE_URL not set")
-		os.Exit(1)
 	}
 
 	pool, err := db.NewPool(context.Background(), dbURL)
 	if err != nil {
 		log.Error("Cannot connect to database", "err", err)
-		os.Exit(1)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	defer pool.Close()
+
 	st := db.NewURLMemory(pool)
 	svc := service.NewShortener(st, service.RandomGeneration{})
-	srv := server.NewServer(svc, logger, cfg.BaseURL)
+	srv := server.NewServer(svc, log, cfg.BaseURL, pool)
 
 	httpServer := &http.Server{
 		Addr:              cfg.addr,

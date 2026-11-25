@@ -58,6 +58,8 @@ func (s *Server) logRequest(next http.Handler) http.Handler {
 			level = slog.LevelWarn
 		case r.URL.Path == "/health":
 			level = slog.LevelDebug
+		case r.URL.Path == "/health" || (r.URL.Path == "/readyz" && rw.status == http.StatusOK):
+			level = slog.LevelDebug
 
 		}
 		s.log.Log(r.Context(), level, "request", "request_id", id, "method", r.Method, "path", r.URL.Path, "status", rw.status,

@@ -1,94 +1,210 @@
 package service
 
-// import (
-// 	"errors"
-// 	"testing"
+import (
+	"context"
+	"errors"
+	"strings"
+	"sync"
+	"testing"
 
-// 	"github.com/drollllted/url-shortener/internal/store"
-// )
+	"github.com/drollllted/url-shortener/internal/store"
+)
 
-// type fakeGen struct {
-// 	codes []string
-// 	i     int
-// }
+type fakeStore struct {
+	mu     sync.Mutex
+	saves  []saveCall
+	getFn  func(code string) (string, error)
+	saveFn func(code, target string) error
+}
 
-// func (g *fakeGen) Generate() string {
-// 	c := g.codes[g.i%len(g.codes)]
-// 	g.i++
-// 	return c
-// }
+type saveCall struct {
+	code, target string
+}
 
-// func TestShorten_InvalidURL(t *testing.T) {
-// 	svc := NewShortener(store.NewStore(), RandomGeneration{})
+func (f *fakeStore) Save(_ context.Context, code, target string) error {
+	f.mu.Lock()
+	f.saves = append(f.saves, saveCall{code, target})
+	f.mu.Unlock()
+	if f.saveFn != nil {
+		return f.saveFn(code, target)
+	}
+	return nil
+}
 
-// 	for _, raw := range []string{"https://", "http//", "abc", ""} {
-// 		code, err := svc.Shorten(raw)
-// 		if !errors.Is(err, ErrInvalidURL) {
-// 			t.Errorf("Shorten(%q): err = %v, want ErrInvalidURL", raw, err)
-// 		}
-// 		if code != "" {
-// 			t.Errorf("Shorten(%q): code = %q, want пустой", raw, code)
-// 		}
-// 	}
-// }
+func (f *fakeStore) Get(_ context.Context, code string) (string, error) {
+	if f.getFn != nil {
+		return f.getFn(code)
+	}
+	return "", store.ErrNotFound
+}
 
-// func TestShorten_OK(t *testing.T) {
-// 	st := store.Store()
-// 	svc := NewShortener(st, RandomGeneration{})
+type stubGen struct {
+	mu    sync.Mutex
+	codes []string
+	i     int
+}
 
-// 	code, err := svc.Shorten("https://go.dev")
-// 	if err != nil {
-// 		t.Fatalf("unexpected error: %v", err)
-// 	}
-// 	if len(code) != 6 {
-// 		t.Errorf("len(code) = %d, want 6", len(code))
-// 	}
-// 	if got, ok := st.Get(code); !ok || got != "https://go.dev" {
-// 		t.Errorf("в хранилище: %q, %v", got, ok)
-// 	}
-// }
+func (g *stubGen) Generate() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	c := g.codes[g.i%len(g.codes)]
+	g.i++
+	return c
+}
 
-// func TestShorten_RetriesOnCollision(t *testing.T) {
-// 	st := store.NewStore()
+func TestShorten_InvalidURL(t *testing.T) {
+	cases := []string{
+		"",
+		"not a url",
+		"ftp://example.com",
+		"javascript:alert(1)",
+		"http://", // нет host
+		"/relative",
+	}
+	for _, in := range cases {
+		t.Run(in, func(t *testing.T) {
+			svc := NewShortener(&fakeStore{}, &stubGen{codes: []string{"abc123"}})
+			_, err := svc.Shorten(context.Background(), in)
+			if !errors.Is(err, ErrInvalidURL) {
+				t.Fatalf("err = %v, want ErrInvalidURL", err)
+			}
+		})
+	}
+}
 
-// 	occupiedCode := "aaaaaa"
-// 	occupiedURL := "https://occupied.example"
-// 	err := st.Save(occupiedCode, occupiedURL)
-// 	if err != nil {
-// 		t.Fatalf("failed to prepare test data: %v", err)
-// 	}
+func TestShorten_OK(t *testing.T) {
+	fs := &fakeStore{}
+	svc := NewShortener(fs, &stubGen{codes: []string{"abc123"}})
 
-// 	fg := &fakeGen{
-// 		codes: []string{"aaaaaa", "bbbbbb"},
-// 	}
+	code, err := svc.Shorten(context.Background(), "https://example.com/path?q=1")
+	if err != nil {
+		t.Fatalf("Shorten: %v", err)
+	}
+	if code != "abc123" {
+		t.Fatalf("code = %q, want abc123", code)
+	}
+	if len(fs.saves) != 1 || fs.saves[0].target != "https://example.com/path?q=1" {
+		t.Fatalf("saves = %+v", fs.saves)
+	}
+}
 
-// 	svc := NewShortener(st, fg)
+func TestShorten_RetriesOnCodeTaken(t *testing.T) {
+	attempts := 0
+	fs := &fakeStore{
+		saveFn: func(code, _ string) error {
+			attempts++
+			if attempts < 3 {
+				return store.ErrCodeTaken
+			}
+			return nil
+		},
+	}
+	svc := NewShortener(fs, &stubGen{codes: []string{"a", "b", "c", "d", "e"}})
 
-// 	code, err := svc.Shorten("https://go.dev")
+	code, err := svc.Shorten(context.Background(), "https://example.com")
+	if err != nil {
+		t.Fatalf("Shorten: %v", err)
+	}
+	if code != "c" {
+		t.Fatalf("code = %q, want c (3rd attempt)", code)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts)
+	}
+}
 
-// 	if err != nil {
-// 		t.Errorf("expected no error, got %v", err)
-// 	}
+func TestShorten_ExhaustsRetries(t *testing.T) {
+	fs := &fakeStore{saveFn: func(_, _ string) error { return store.ErrCodeTaken }}
+	svc := NewShortener(fs, &stubGen{codes: []string{"a"}})
 
-// 	if code != "bbbbbb" {
-// 		t.Errorf("expected code to be 'bbbbbb', got '%s'", code)
-// 	}
+	_, err := svc.Shorten(context.Background(), "https://example.com")
+	if !errors.Is(err, ErrCodeGeneration) {
+		t.Fatalf("err = %v, want ErrCodeGeneration", err)
+	}
+	if len(fs.saves) != 5 {
+		t.Fatalf("saves = %d, want 5", len(fs.saves))
+	}
+}
 
-// 	savedURL, ok := st.Get(occupiedCode)
-// 	if !ok {
-// 		t.Errorf("expected to find occupied code, got error: %v", occupiedCode)
-// 	}
-// 	if savedURL != occupiedURL {
-// 		t.Errorf("expected occupied URL to remain '%s', got '%s'", occupiedURL, savedURL)
-// 	}
-// }
+func TestShorten_StoreErrorPropagates(t *testing.T) {
+	boom := errors.New("boom")
+	fs := &fakeStore{saveFn: func(_, _ string) error { return boom }}
+	svc := NewShortener(fs, &stubGen{codes: []string{"a"}})
 
-// func TestShorten_AllCodesTaken(t *testing.T) {
-// 	st := store.NewStore()
-// 	svc := NewShortener(st, &fakeGen{codes: []string{"aaaaaa"}})
-// 	_, err := svc.Shorten("https://go.dev")
+	_, err := svc.Shorten(context.Background(), "https://example.com")
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want boom", err)
+	}
+}
 
-// 	if errors.Is(err, ErrCodeGeneration) {
+func TestResolve_OK(t *testing.T) {
+	fs := &fakeStore{getFn: func(code string) (string, error) {
+		if code == "abc123" {
+			return "https://example.com", nil
+		}
+		return "", store.ErrNotFound
+	}}
+	svc := NewShortener(fs, &stubGen{codes: []string{"x"}})
 
-// 	}
-// }
+	got, err := svc.Resolve(context.Background(), "abc123")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got != "https://example.com" {
+		t.Fatalf("got = %q", got)
+	}
+}
+
+func TestResolve_NotFound(t *testing.T) {
+	fs := &fakeStore{getFn: func(string) (string, error) { return "", store.ErrNotFound }}
+	svc := NewShortener(fs, &stubGen{codes: []string{"x"}})
+
+	_, err := svc.Resolve(context.Background(), "missing")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestResolve_StoreErrorIsNotNotFound(t *testing.T) {
+	boom := errors.New("connection refused")
+	fs := &fakeStore{getFn: func(string) (string, error) { return "", boom }}
+	svc := NewShortener(fs, &stubGen{codes: []string{"x"}})
+
+	_, err := svc.Resolve(context.Background(), "abc")
+	if errors.Is(err, ErrNotFound) {
+		t.Fatal("store error must NOT become ErrNotFound")
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want boom", err)
+	}
+}
+
+func TestIsValidURL(t *testing.T) {
+	ok := []string{"http://a", "https://example.com", "https://example.com/path?q=1#frag"}
+	for _, s := range ok {
+		if !isValidURL(s) {
+			t.Errorf("isValidURL(%q) = false, want true", s)
+		}
+	}
+	bad := []string{"", "ftp://a", "https://", "mailto:a@b.c", "example.com"}
+	for _, s := range bad {
+		if isValidURL(s) {
+			t.Errorf("isValidURL(%q) = true, want false", s)
+		}
+	}
+}
+
+func TestRandomGeneration_Format(t *testing.T) {
+	g := RandomGeneration{}
+	for i := 0; i < 1000; i++ {
+		c := g.Generate()
+		if len(c) != 6 {
+			t.Fatalf("len = %d, want 6", len(c))
+		}
+		for _, r := range c {
+			if !strings.ContainsRune(alphabet, r) {
+				t.Fatalf("bad rune %q in %q", r, c)
+			}
+		}
+	}
+}
