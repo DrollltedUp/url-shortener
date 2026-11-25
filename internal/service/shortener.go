@@ -82,7 +82,10 @@ func (RandomGeneration) Generate() string {
 func (s *Shortener) Resolve(ctx context.Context, code string) (string, error) {
 	target, err := s.store.Get(ctx, code)
 	if err != nil {
-		return "", ErrNotFound
+		if errors.Is(err, store.ErrNotFound) {
+			return "", ErrNotFound
+		}
+		return "", err
 	}
 
 	return target, nil

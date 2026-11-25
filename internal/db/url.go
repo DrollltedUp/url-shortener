@@ -48,7 +48,7 @@ func (u *URLMemory) Get(ctx context.Context, code string) (string, error) {
 	const q = `SELECT url_original FROM url WHERE url_short = $1`
 	var target string
 	err := u.pool.QueryRow(ctx, q, code).Scan(&target)
-	if errors.As(err, pgx.ErrNoRows) {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", store.ErrNotFound
 	}
 	if err != nil {
