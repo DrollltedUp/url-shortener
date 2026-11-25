@@ -58,9 +58,10 @@ func run() error {
 		os.Exit(1)
 	}
 
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	st := db.NewURLMemory(pool)
 	svc := service.NewShortener(st, service.RandomGeneration{})
-	srv := server.NewServer(svc, cfg.BaseURL)
+	srv := server.NewServer(svc, logger, cfg.BaseURL)
 
 	httpServer := &http.Server{
 		Addr:              cfg.addr,

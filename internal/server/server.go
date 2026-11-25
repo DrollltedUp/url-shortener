@@ -3,13 +3,14 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/drollllted/url-shortener/internal/service"
 )
 
-const baseURL = "http://localhost:9091"
+const maxBodyBytes = 4 << 10
 
 type errorDTO struct {
 	Message string    `json:"message"`
@@ -18,6 +19,7 @@ type errorDTO struct {
 
 type Server struct {
 	svc     *service.Shortener
+	log     *slog.Logger
 	baseURL string
 }
 
@@ -25,9 +27,10 @@ type Request struct {
 	URL string `json:"url"`
 }
 
-func NewServer(svc *service.Shortener, baseURL string) *Server {
+func NewServer(svc *service.Shortener, log *slog.Logger, baseURL string) *Server {
 	return &Server{
 		svc:     svc,
+		log:     log,
 		baseURL: baseURL,
 	}
 }
@@ -38,40 +41,38 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /{code}", s.getCode)
 	mux.HandleFunc("GET /health", s.healthHandle)
 
-	return mux
+	return s.logRequest(s.recovery(mux))
 }
 
 func (s *Server) shorten(w http.ResponseWriter, r *http.Request) {
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
 	var request Request
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request too large")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 
 	code, err := s.svc.Shorten(r.Context(), request.URL)
 	if err != nil {
-		switch {
-		case errors.Is(err, service.ErrInvalidURL):
-			writeError(w, http.StatusBadRequest, "bad URL")
-		default:
-			writeError(w, http.StatusInternalServerError, "internal error")
-		}
+		s.handlerError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]string{"short_url": baseURL + "/" + code})
+	s.log.InfoContext(r.Context(), "link created", "code", code)
+	writeJSON(w, http.StatusCreated, map[string]string{"short_url": s.baseURL + "/" + code})
 
 }
 
 func (s *Server) getCode(w http.ResponseWriter, r *http.Request) {
 	target, err := s.svc.Resolve(r.Context(), r.PathValue("code"))
-	//shorteners.Resolve(r.PathValue("code"))
 	if err != nil {
-		switch {
-		case errors.Is(err, service.ErrNotFound):
-			writeError(w, http.StatusNotFound, "not found")
-		default:
-			writeError(w, http.StatusInternalServerError, "internal error")
-		}
+		s.handlerError(w, r, err)
 		return
 	}
 	http.Redirect(w, r, target, http.StatusFound)
@@ -79,6 +80,18 @@ func (s *Server) getCode(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) healthHandle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handlerError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, service.ErrInvalidURL):
+		writeError(w, http.StatusBadRequest, "bad url")
+	case errors.Is(err, service.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not found")
+	default:
+		s.log.ErrorContext(r.Context(), "request failed", "request_id", requestID(r.Context()), "method", r.Method, "path", r.URL.Path, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+	}
 }
 
 // Functions Other
