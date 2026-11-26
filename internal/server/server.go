@@ -31,7 +31,8 @@ type Server struct {
 }
 
 type Request struct {
-	URL string `json:"url"`
+	URL   string `json:"url"`
+	Alias string `json:"alias"`
 }
 
 func NewServer(svc *service.Shortener, log *slog.Logger, baseURL string, pinger Pinger) *Server {
@@ -68,7 +69,7 @@ func (s *Server) shorten(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code, err := s.svc.Shorten(r.Context(), request.URL)
+	code, err := s.svc.Shorten(r.Context(), request.URL, request.Alias)
 	if err != nil {
 		s.handlerError(w, r, err)
 		return
@@ -92,6 +93,10 @@ func (s *Server) healthHandle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readyzHandle(w http.ResponseWriter, r *http.Request) {
+	if s.pinger == nil {
+		writeError(w, http.StatusServiceUnavailable, "readiness not configured")
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), readyzTimeout)
 	defer cancel()
 
@@ -114,6 +119,10 @@ func (s *Server) handlerError(w http.ResponseWriter, r *http.Request, err error)
 		writeError(w, http.StatusBadRequest, "bad url")
 	case errors.Is(err, service.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not found")
+	case errors.Is(err, service.ErrInvalidAlias), errors.Is(err, service.ErrReservedAlias):
+		writeError(w, http.StatusBadRequest, "bad request")
+	case errors.Is(err, service.ErrAliasTaken):
+		writeError(w, http.StatusConflict, "alias is taken")
 	default:
 		s.log.ErrorContext(r.Context(), "request failed", "request_id", requestID(r.Context()), "method", r.Method, "path", r.URL.Path, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")

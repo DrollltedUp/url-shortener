@@ -5,6 +5,8 @@ import (
 	"errors"
 	"math/rand/v2"
 	"net/url"
+	"regexp"
+	"strings"
 
 	"github.com/drollllted/url-shortener/internal/store"
 )
@@ -24,7 +26,17 @@ var (
 	ErrInvalidURL     = errors.New("invalid URL")
 	ErrCodeGeneration = errors.New("could not generate unique code")
 	ErrNotFound       = errors.New("link not found")
+
+	ErrInvalidAlias  = errors.New("invalid alias")
+	ErrReservedAlias = errors.New("alias is reserved")
+	ErrAliasTaken    = errors.New("alias is taken")
 )
+
+var aliasRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,32}$`)
+
+var reserved = map[string]struct{}{
+	"health": {}, "healthz": {}, "readyz": {}, "shorten": {},
+}
 
 const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
@@ -35,9 +47,13 @@ func NewShortener(s store.Store, gen CodeGenerator) *Shortener {
 	}
 }
 
-func (s *Shortener) Shorten(ctx context.Context, rawURL string) (string, error) {
+func (s *Shortener) Shorten(ctx context.Context, rawURL, alias string) (string, error) {
 	if !isValidURL(rawURL) {
 		return "", ErrInvalidURL
+	}
+
+	if alias != "" {
+		return s.saveAlias(ctx, rawURL, alias)
 	}
 
 	for i := 0; i < 5; i++ {
@@ -89,4 +105,26 @@ func (s *Shortener) Resolve(ctx context.Context, code string) (string, error) {
 	}
 
 	return target, nil
+}
+
+// For Alias
+
+func (s *Shortener) saveAlias(ctx context.Context, rawURL, alias string) (string, error) {
+	if !aliasRe.MatchString(alias) {
+		return "", ErrInvalidAlias
+	}
+
+	if _, ok := reserved[strings.ToLower(alias)]; ok {
+		return "", ErrReservedAlias
+	}
+
+	err := s.store.Save(ctx, alias, rawURL)
+	if errors.Is(err, store.ErrCodeTaken) {
+		return "", ErrAliasTaken
+	}
+	if err != nil {
+		return "", err
+	}
+
+	return alias, nil
 }

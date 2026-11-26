@@ -1,7 +1,7 @@
 up:
 	docker compose up -d --build
-	curl -i "localhost:9091/readyz"     
 	curl -i "localhost:9091/health"
+	curl -i "localhost:9091/readyz"     
 
 
 down:
